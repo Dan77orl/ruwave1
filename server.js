@@ -66,9 +66,9 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
       model: "gpt-4",
       messages
     });
-
-    const reply = completion.data.choices[0].message.content;
-    res.json({ reply });
+    console.log("➡️ Ответ от OpenAI:", JSON.stringify(completion.data, null, 2));
+    const reply = completion?.data?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
+res.json({ reply });
   } catch (err) {
     res.status(500).json({ error: "Ошибка сервера", detail: err.message });
   }
