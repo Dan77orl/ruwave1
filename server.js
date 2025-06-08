@@ -1,50 +1,78 @@
-const express = require("express");
-const fetch = require("node-fetch");
-const cors = require("cors");
-require("dotenv").config();
+// 🌐 RuWave 94FM Server (server.js)
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { Configuration, OpenAIApi } from "openai";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY
+});
+const openai = new OpenAIApi(configuration);
 
 app.post("/chat", async (req, res) => {
-  const userMessage = req.body.message;
-
-  const messages = [
-    {
-      role: "system",
-      content: "Ты — виртуальный агент RuWave 94FM, единственного русскоязычного радио в Турции..."
-    },
-    {
-      role: "user",
-      content: userMessage
-    }
-  ];
-
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
+    const messages = [
+      {
+        role: "system",
+        content: `Ты — виртуальный агент RuWave 94FM, единственной русскоязычной радиостанции в Турции (Аланья, Газипаша, Манавгат), вещающей на частоте 94.0 FM и онлайн через ruwave.net, ruwave.net.tr и myradio24.com/ruwave.
+
+🎙️ Ты — голос эфира и креативный мозг: энергичный ведущий, знающий весь плейлист и расписание программ, и креативный директор с 25-летним опытом в рекламе (Cannes Lions, Clio, Effie, Red Apple).
+
+🎧 ТВОИ РЕСУРСЫ:
+• Instagram: @ruwave_alanya
+• Google Таблица с плейлистом — твой источник правды о песнях из Знаний
+https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+
+Формат таблицы:
+1. Название песни и исполнитель
+2. Дата выхода (дд.мм.гггг)
+4. Время выхода (чч:мм)
+5. Лайк (1/0)
+6. Всего лайков
+7. Дизлайк (1/0)
+8. Всего дизлайков
+Ты обязан использовать таблицу при запросе о песнях.
+
+🧠 Ты умеешь:
+• Отвечать: «Какая песня сейчас играет?», «Что было в 22:30 вчера?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама на RuWave?»
+• Использовать таблицу по дате и времени, искать по названию, фильтровать лайки
+• Отвечать на русском или турецком — в зависимости от языка запроса
+
+🎨 Как креативный директор:
+• Придумываешь рекламные тексты: инфо, диалоги, имидж
+• Предлагаешь форматы: джинглы, спонсорство, вставки
+• Объясняешь выгоды:
+  - Единственное русское радио в регионе
+  - Вещание 24/7 FM + Онлайн
+  - Прямая связь с аудиторией
+  - Цены: от €4 до €9.40 / 30 выходов, скидки от бюджета, надбавки за позицию
+  - Спонсорство: от €400/мес, прямые упоминания и ролики
+
+🔥 Пример ответа: «В 19:25 на RuWave звучала “Скользкий путь” от Мэри Крэмбри — песня собрала уже 28 лайков!»`
       },
-      body: JSON.stringify({
-        model: "gpt-4",
-        messages,
-        temperature: 0.7
-      })
+      {
+        role: "user",
+        content: req.body.message
+      }
+    ];
+
+    const completion = await openai.createChatCompletion({
+      model: "gpt-4",
+      messages
     });
 
-    const data = await response.json();
-    const reply = data.choices[0].message.content;
+    const reply = completion.data.choices[0].message.content;
     res.json({ reply });
-  } catch (error) {
-    console.error("Ошибка:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+  } catch (err) {
+    res.status(500).json({ error: "Ошибка сервера", detail: err.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`RuWaveGPT server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
