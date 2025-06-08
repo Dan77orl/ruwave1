@@ -1,8 +1,8 @@
-// 🌐 RuWave 94FM Server (server.js)
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import { Configuration, OpenAIApi } from "openai";
+// 🌐 RuWave 94FM Server (CommonJS версия)
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const { Configuration, OpenAIApi } = require("openai");
 
 dotenv.config();
 
@@ -76,4 +76,3 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
-
