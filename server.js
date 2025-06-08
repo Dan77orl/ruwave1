@@ -76,3 +76,4 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
+
