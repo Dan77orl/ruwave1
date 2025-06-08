@@ -68,8 +68,9 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
     });
     console.log("➡️ Ответ от OpenAI:", JSON.stringify(completion.data, null, 2));
     const reply = completion.data.choices[0]?.message.content || "⚠️ Ошибка получения ответа от модели.";
-res.json({ reply });
+  res.json({ reply });
   } catch (err) {
+    console.error("❌ Ошибка в /chat:", err); // <== вот это
     res.status(500).json({ error: "Ошибка сервера", detail: err.message });
   }
 });
