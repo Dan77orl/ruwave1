@@ -1,10 +1,15 @@
-// 🌐 RuWave 94FM Server (CommonJS версия)
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const OpenAI = require("openai");
 
 dotenv.config();
+
+// Проверка наличия OPENAI_API_KEY
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ Ошибка: OPENAI_API_KEY не задан в .env файле");
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
@@ -17,6 +22,12 @@ const openai = new OpenAI({
 
 app.post("/chat", async (req, res) => {
   try {
+    const userMessage = req.body.message?.trim();
+    if (!userMessage) {
+      console.warn("⚠️ Пустое сообщение от клиента");
+      return res.status(400).json({ error: "Сообщение не предоставлено" });
+    }
+
     const messages = [
       {
         role: "system",
@@ -26,8 +37,7 @@ app.post("/chat", async (req, res) => {
 
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
-• Google Таблица с плейлистом — твой источник правды о песнях из Знаний
-https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
 
 Формат таблицы:
 1. Название песни и исполнитель
@@ -37,11 +47,10 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
 6. Всего лайков
 7. Дизлайк (1/0)
 8. Всего дизлайков
-Ты обязан использовать таблицу при запросе о песнях.
+(Интеграция с таблицей пока не реализована, но данные должны использоваться.)
 
 🧠 Ты умеешь:
 • Отвечать: «Какая песня сейчас играет?», «Что было в 22:30 вчера?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама на RuWave?»
-• Использовать таблицу по дате и времени, искать по названию, фильтровать лайки
 • Отвечать на русском или турецком — в зависимости от языка запроса
 
 🎨 Как креативный директор:
@@ -58,19 +67,26 @@ https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK
       },
       {
         role: "user",
-        content: req.body.message
+        content: userMessage
       }
     ];
 
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: "gpt-4",
-      messages
+      messages,
+      max_tokens: 500,
+      temperature: 0.7
     });
-    console.log("➡️ Ответ от OpenAI:", JSON.stringify(completion.data, null, 2));
-    const reply = completion.data.choices[0]?.message.content || "⚠️ Ошибка получения ответа от модели.";
-  res.json({ reply });
+
+    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
+    console.log("➡️ Ответ от OpenAI:", { reply, usage: completion.usage });
+    res.json({ reply });
   } catch (err) {
-    console.error("❌ Ошибка в /chat:", err); // <== вот это
+    console.error("❌ Ошибка в /chat:", {
+      message: err.message,
+      status: err.status,
+      stack: err.stack
+    });
     res.status(500).json({ error: "Ошибка сервера", detail: err.message });
   }
 });
