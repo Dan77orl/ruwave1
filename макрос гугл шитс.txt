@@ -1,0 +1,261 @@
+/**
+ * Ru-Wave Likes System — Final Version with Likes/Dislikes
+ */
+
+const SHEET_NAME = "Likes";
+const AUTO_UPDATE_INTERVAL_MINUTES = 1;
+const RADIO_API_URL = "https://myradio24.com/users/ruwave/status.json";
+const DEBUG_MODE = true;
+
+function doGet(e) {
+  try {
+    const params = e && e.parameter ? e.parameter : {};
+    const action = params.action || "";
+    const song = decodeURIComponent(params.song || "");
+    const date = params.date || "";
+    const timestamp = params.timestamp || "";
+    const callback = params.callback || "";
+
+    if (DEBUG_MODE) Logger.log("doGet request: " + JSON.stringify(params));
+
+    switch (action) {
+      case "addLike": return handleAddLike(song, date, timestamp, callback);
+      case "addDislike": return handleAddDislike(song, date, timestamp, callback);
+      case "checkSong": return handleCheckSong(song, date, timestamp, callback);
+      case "getLikes": return handleGetLikes(song, date, timestamp, callback);
+      case "getDislikes": return handleGetDislikes(song, date, timestamp, callback);
+      case "getHistory": return handleGetHistory(params.limit || 10, callback);
+      default:
+        return createResponse({ status: "error", message: "Invalid action" }, callback);
+    }
+  } catch (error) {
+    return createResponse({ status: "error", message: "Server error: " + error.toString() }, e.parameter.callback || "");
+  }
+}
+
+function doPost(e) { return doGet(e); }
+
+function createResponse(data, callback) {
+  if (callback) {
+    return ContentService.createTextOutput(callback + "(" + JSON.stringify(data) + ")")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+function getSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(SHEET_NAME);
+    sheet.appendRow(["Song", "Date", "UserID", "Timestamp", "Likes", "Dislikes", "TotalLikes", "TotalDislikes"]);
+  }
+  return sheet;
+}
+
+function parseTimeToDate(timeStr) {
+  const [h, m, s] = String(timeStr || '00:00:00').split(':').map(n => parseInt(n, 10));
+  return new Date(0, 0, 0, h || 0, m || 0, s || 0);
+}
+function handleCheckSong(song, date, timestamp, callback) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  // Сначала проверим, есть ли песня в сегодняшних записях
+  for (let i = data.length - 1; i >= 1; i--) {
+    const rowSong = String(data[i][0] || '').trim();
+    let rowDate;
+    if (data[i][1] instanceof Date) {
+      rowDate = Utilities.formatDate(data[i][1], Session.getScriptTimeZone(), "dd.MM.yyyy");
+    } else {
+      rowDate = String(data[i][1] || "").trim();
+    }
+    
+    // Если нашли песню с таким же названием за сегодня, используем её
+    if (rowSong === song && rowDate === date) {
+      return createResponse({ status: "success", exists: true, timestamp: data[i][3] }, callback);
+    }
+  }
+
+  // Если не нашли, добавим новую запись
+  const totalLikes = getTotalLikes(song);
+  const totalDislikes = getTotalDislikes(song);
+  sheet.appendRow([song, date, "", timestamp, 0, 0, totalLikes, totalDislikes]);
+  return createResponse({ status: "success", exists: true, timestamp: timestamp }, callback);
+}
+function handleAddLike(song, date, timestamp, callback) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+
+  // Находим первое вхождение песни за сегодня
+  for (let i = data.length - 1; i >= 1; i--) {
+    const rowSong = String(data[i][0] || '').trim();
+    const rowDate = data[i][1] instanceof Date
+      ? Utilities.formatDate(data[i][1], Session.getScriptTimeZone(), "dd.MM.yyyy")
+      : String(data[i][1] || '').trim();
+
+    if (rowSong === song && rowDate === date) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  // Если не нашли, добавляем новую запись
+  if (rowIndex === -1) {
+    const totalLikes = getTotalLikes(song) + 1;
+    const totalDislikes = getTotalDislikes(song);
+    sheet.appendRow([song, date, "", timestamp, 1, 0, totalLikes, totalDislikes]);
+    return createResponse({
+      status: "success",
+      likes: 1,
+      totalLikes: totalLikes
+    }, callback);
+  }
+
+  // Если нашли, увеличиваем счетчик
+  const currentLikes = Number(data[rowIndex - 1][4]) || 0;
+  const newLikes = currentLikes + 1;
+  const totalLikes = getTotalLikes(song) + 1;
+
+  sheet.getRange(rowIndex, 5).setValue(newLikes);
+  sheet.getRange(rowIndex, 7).setValue(totalLikes);
+
+  return createResponse({
+    status: "success",
+    likes: newLikes,
+    totalLikes: totalLikes
+  }, callback);
+}
+
+function handleAddDislike(song, date, timestamp, callback) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+
+  // Находим первое вхождение песни за сегодня
+  for (let i = data.length - 1; i >= 1; i--) {
+    const rowSong = String(data[i][0] || '').trim();
+    const rowDate = data[i][1] instanceof Date
+      ? Utilities.formatDate(data[i][1], Session.getScriptTimeZone(), "dd.MM.yyyy")
+      : String(data[i][1] || '').trim();
+
+    if (rowSong === song && rowDate === date) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  // Если не нашли, добавляем новую запись
+  if (rowIndex === -1) {
+    const totalLikes = getTotalLikes(song);
+    const totalDislikes = getTotalDislikes(song) + 1;
+    sheet.appendRow([song, date, "", timestamp, 0, 1, totalLikes, totalDislikes]);
+    return createResponse({
+      status: "success",
+      dislikes: 1,
+      totalDislikes: totalDislikes
+    }, callback);
+  }
+
+  // Если нашли, увеличиваем счетчик
+  const currentDislikes = Number(data[rowIndex - 1][5]) || 0;
+  const newDislikes = currentDislikes + 1;
+  const totalDislikes = getTotalDislikes(song) + 1;
+
+  sheet.getRange(rowIndex, 6).setValue(newDislikes);
+  sheet.getRange(rowIndex, 8).setValue(totalDislikes);
+
+  return createResponse({
+    status: "success",
+    dislikes: newDislikes,
+    totalDislikes: totalDislikes
+  }, callback);
+}
+function handleGetLikes(song, date, timestamp, callback) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  const inputTime = parseTimeToDate(timestamp);
+
+  for (let i = 1; i < data.length; i++) {
+    const rowTime = parseTimeToDate(data[i][3]);
+    const diff = Math.abs(inputTime - rowTime);
+    if (data[i][0] === song && data[i][1] === date && diff <= 5 * 60 * 1000) {
+      return createResponse({ status: "success", likes: Number(data[i][4]) || 0 }, callback);
+    }
+  }
+  return createResponse({ status: "success", likes: 0 }, callback);
+}
+
+function handleGetDislikes(song, date, timestamp, callback) {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  const inputTime = parseTimeToDate(timestamp);
+
+  for (let i = 1; i < data.length; i++) {
+    const rowTime = parseTimeToDate(data[i][3]);
+    const diff = Math.abs(inputTime - rowTime);
+    if (data[i][0] === song && data[i][1] === date && diff <= 5 * 60 * 1000) {
+      return createResponse({ status: "success", dislikes: Number(data[i][5]) || 0 }, callback);
+    }
+  }
+  return createResponse({ status: "success", dislikes: 0 }, callback);
+}
+
+function getTotalLikes(song) {
+  const sheet = getSheet();
+  return sheet.getDataRange().getValues().reduce((sum, row, i) => i > 0 && row[0] === song ? sum + (Number(row[4]) || 0) : sum, 0);
+}
+
+function getTotalDislikes(song) {
+  const sheet = getSheet();
+  return sheet.getDataRange().getValues().reduce((sum, row, i) => i > 0 && row[0] === song ? sum + (Number(row[5]) || 0) : sum, 0);
+}
+
+function autoUpdateSongs() {
+  try {
+    const response = UrlFetchApp.fetch(RADIO_API_URL);
+    if (response.getResponseCode() !== 200) return;
+    const data = JSON.parse(response.getContentText());
+    if (!data || !data.song || typeof data.song !== 'string') return;
+
+    const song = decodeURIComponent(data.song.trim());
+    const date = getCurrentDate();
+    const timestamp = getCurrentTimestamp();
+    const sheet = getSheet();
+
+    const stored = JSON.parse(PropertiesService.getScriptProperties().getProperty('currentSong') || '{}');
+    if (stored.song === song && stored.date === date) return;
+
+    const totalLikes = getTotalLikes(song);
+    const totalDislikes = getTotalDislikes(song);
+    sheet.appendRow([song, date, "", timestamp, 0, 0, totalLikes, totalDislikes]);
+    PropertiesService.getScriptProperties().setProperty('currentSong', JSON.stringify({ song, date, timestamp }));
+  } catch (error) {
+    if (DEBUG_MODE) Logger.log("Error in autoUpdateSongs: " + error.toString());
+  }
+}
+
+function getCurrentDate() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd.MM.yyyy");
+}
+
+function getCurrentTimestamp() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "HH:mm:ss");
+}
+
+function setupAutoUpdate() {
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'autoUpdateSongs') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger('autoUpdateSongs').timeBased().everyMinutes(AUTO_UPDATE_INTERVAL_MINUTES).create();
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Ru-Wave')
+    .addItem('Обновить песни вручную', 'autoUpdateSongs')
+    .addItem('Настроить автообновление', 'setupAutoUpdate')
+    .addToUi();
+}
