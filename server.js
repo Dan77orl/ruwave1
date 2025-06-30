@@ -5,60 +5,6 @@ const OpenAI = require("openai");
 
 dotenv.config();
 
-app.post("/chat", async (req, res) => { // Проверка наличия OPENAI_API_KEY
-  try {
-    const userMessage = req.body.message?.trim();
-    if (!userMessage) {
-      console.warn("⚠️ Пустое сообщение от клиента");
-      return res.status(400).json({ error: "Сообщение не предоставлено" });
-    }
-
-    // Проверка цен
-    let foundPrice = null;
-    for (let key in prices) {
-      if (userMessage.toLowerCase().includes(key)) {
-        foundPrice = prices[key];
-        break;
-      }
-    }
-
-    if (foundPrice) {
-      const reply = `Стоимость услуги "${key}": ${foundPrice}`;
-      console.log("✅ Ответ из локального прайс-листа:", reply);
-      return res.json({ reply });
-    }
-
-    // Запрос к OpenAI
-    const messages = [
-      {
-        role: "system",
-        content: `Ты — виртуальный агент RuWave... (твой длинный промпт)`
-      },
-      {
-        role: "user",
-        content: userMessage
-      }
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages,
-      max_tokens: 500,
-      temperature: 0.7
-    });
-
-    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
-    console.log("➡️ Ответ от OpenAI:", { reply, usage: completion.usage });
-    res.json({ reply });
-  } catch (err) {
-    console.error("❌ Ошибка в /chat:", {
-      message: err.message,
-      status: err.status,
-      stack: err.stack
-    });
-    res.status(500).json({ error: "Ошибка сервера", detail: err.message });
-  }
-}); // Проверка наличия OPENAI_API_KEY
 
 // Проверка наличия OPENAI_API_KEY
 if (!process.env.OPENAI_API_KEY) {
