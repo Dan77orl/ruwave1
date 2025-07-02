@@ -31,12 +31,12 @@ async function loadPlaylist() {
 
     const headers = rows[0].map(h => h.trim().toLowerCase());
     const dateIdx = headers.findIndex(h => h.includes('date'));
-    const timeIdx = headers.findIndex(h => h.includes('time'));
+    const timeIdx = headers.findIndex(h => h.includes('timestamp'));
     const songIdx = headers.findIndex(h => h.includes('song'));
 
     playlist = rows.slice(1).map(row => ({
       date: row[dateIdx]?.trim(),
-      time: row[timeIdx]?.trim(),
+      time: row[timeIdx]?.trim().slice(0, 5), // убираем секунды
       song: row[songIdx]?.trim()
     })).filter(r => r.date && r.time && r.song);
 
@@ -53,7 +53,7 @@ setInterval(loadPlaylist, 60 * 60 * 1000);
 function findSongsByDateTime(date, startTime, endTime) {
   const toMinutes = t => {
     const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
+    return h * 60 + (m || 0);
   };
 
   const start = toMinutes(startTime);
@@ -77,10 +77,10 @@ async function parseDateTimeWithGPT(userMessage) {
 - Если указано "вчера", укажи "dateShift": -1.
 - Если указано "позавчера", "dateShift": -2.
 - Если указано "10 дней назад", "dateShift": -10.
-- Если указана конкретная дата (например, 1 июля), то укажи её в поле "date": "01.07.2025".
+- Если указана конкретная дата (например, 1 июля), укажи её в поле "date": "01.07.2025".
 - Если дата не указана — используй сегодня ("dateShift": 0).
 - Если время не указано, ставь с "00:00" до "23:59".
-- Если указано "в 9 вечера", то это с "21:00" до "21:59". То же самое для других чисел и частей суток.
+- Если указано "в 9 вечера", это с "21:00" до "21:59".
 - Ответ строго в формате JSON:
 {"dateShift": -1, "start": "21:00", "end": "21:59"}
 или
