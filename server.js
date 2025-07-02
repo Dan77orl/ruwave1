@@ -15,7 +15,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Инициализация OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -68,73 +67,39 @@ function findSongsByDateTime(date, startTime, endTime) {
   });
 }
 
-// 🕵️ Парсинг даты и времени из текста
-function parseDateTimeFromMessage(message) {
-  const now = new Date();
+// 🔥 Парсинг даты и времени с помощью GPT
+async function parseDateTimeWithGPT(userMessage) {
+  const messages = [
+    {
+      role: "system",
+      content: `Ты — ассистент радиостанции RuWave. Определи дату и диапазон времени из запроса пользователя.
 
-  // По умолчанию — сегодняшняя дата и весь день
-  let date = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-  let startTime = "00:00";
-  let endTime = "23:59";
+Ответ всегда в формате JSON:
+{"date":"дд.мм.гггг", "start":"чч:мм", "end":"чч:мм"}
 
-  // Вчера
-  if (/вчера/i.test(message)) {
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    date = `${yesterday.getDate().toString().padStart(2, '0')}.${(yesterday.getMonth() + 1).toString().padStart(2, '0')}.${yesterday.getFullYear()}`;
+Правила:
+- Если дата не указана, ставь сегодняшнюю.
+- Если время не указано, ставь с "00:00" до "23:59".
+- Игнорируй лишние слова и пиши только JSON.`
+    },
+    { role: "user", content: userMessage }
+  ];
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o", // Или gpt-4
+    messages,
+    max_tokens: 300,
+    temperature: 0.2
+  });
+
+  const reply = completion.choices[0].message.content;
+  try {
+    const json = JSON.parse(reply);
+    return json;
+  } catch (e) {
+    console.error("❌ Ошибка парсинга JSON от GPT:", reply);
+    return null;
   }
-
-  // Конкретная дата (например, 1 июля)
-  const dateMatch = message.match(/(\d{1,2})\s*(июля|июня|мая|августа|сентября|октября|ноября|декабря)/i);
-  if (dateMatch) {
-    const day = dateMatch[1].padStart(2, "0");
-    const monthNames = {
-      января: "01", февраля: "02", марта: "03", апреля: "04",
-      мая: "05", июня: "06", июля: "07", августа: "08",
-      сентября: "09", октября: "10", ноября: "11", декабря: "12"
-    };
-    const month = monthNames[dateMatch[2].toLowerCase()];
-    const year = now.getFullYear();
-    date = `${day}.${month}.${year}`;
-  }
-
-  // Диапазон времени (с 9 до 11)
-  const rangeMatch = message.match(/с\s*(\d{1,2})\s*(?:[:.](\d{1,2}))?\s*(?:до|–|-)\s*(\d{1,2})\s*(?:[:.](\d{1,2}))?/i);
-  if (rangeMatch) {
-    const h1 = rangeMatch[1].padStart(2, "0");
-    const m1 = (rangeMatch[2] || "00").padStart(2, "0");
-    const h2 = rangeMatch[3].padStart(2, "0");
-    const m2 = (rangeMatch[4] || "59").padStart(2, "0");
-
-    startTime = `${h1}:${m1}`;
-    endTime = `${h2}:${m2}`;
-  }
-
-  // Конкретное время (в 21:30)
-  const timeMatch = message.match(/в\s*(\d{1,2})[:.](\d{1,2})/i);
-  if (timeMatch) {
-    const h = timeMatch[1].padStart(2, "0");
-    const m = timeMatch[2].padStart(2, "0");
-    startTime = `${h}:${m}`;
-    endTime = `${h}:${m}`;
-  }
-
-  // Утром, днём, вечером, ночью
-  if (/утром/i.test(message)) {
-    startTime = "06:00";
-    endTime = "11:59";
-  } else if (/днем|днём/i.test(message)) {
-    startTime = "12:00";
-    endTime = "17:59";
-  } else if (/вечером/i.test(message)) {
-    startTime = "18:00";
-    endTime = "23:59";
-  } else if (/ночью/i.test(message)) {
-    startTime = "00:00";
-    endTime = "05:59";
-  }
-
-  return { date, startTime, endTime };
 }
 
 // 🚀 Главный эндпоинт чата
@@ -148,14 +113,20 @@ app.post("/chat", async (req, res) => {
     const playlistCheck = /что играло|какая песня|что за песня|что было/i.test(userMessage);
 
     if (playlistCheck) {
-      const { date, startTime, endTime } = parseDateTimeFromMessage(userMessage);
-      const results = findSongsByDateTime(date, startTime, endTime);
+      const dateTime = await parseDateTimeWithGPT(userMessage);
 
-      if (results.length > 0) {
-        const list = results.map(r => `${r.time} — ${r.song}`).join("\n");
-        return res.json({ reply: `🎧 Песни за ${date} с ${startTime} до ${endTime}:\n${list}` });
+      if (dateTime) {
+        const { date, start, end } = dateTime;
+        const results = findSongsByDateTime(date, start, end);
+
+        if (results.length > 0) {
+          const list = results.map(r => `${r.time} — ${r.song}`).join("\n");
+          return res.json({ reply: `🎧 Песни за ${date} с ${start} до ${end}:\n${list}` });
+        } else {
+          return res.json({ reply: `🎧 За ${date} с ${start} до ${end} песни не найдены.` });
+        }
       } else {
-        return res.json({ reply: `🎧 За ${date} с ${startTime} до ${endTime} песни не найдены.` });
+        return res.json({ reply: "❌ Не удалось определить дату и время из запроса." });
       }
     }
 
