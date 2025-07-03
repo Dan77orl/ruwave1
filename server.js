@@ -52,7 +52,7 @@ async function loadPlaylist() {
 function findSongByTime(queryTime) {
   const match = playlistData.find((row) => row["Время выхода"]?.trim() === queryTime);
   if (match) {
-    const title = row["Название"] || row[Object.keys(row)[0]]; // поддержка без заголовков
+    const title = row["Название"] || row[Object.keys(row)[0]]; // поддержка без заголовковф
     const likes = row["Всего лайков"] || "0";
     return `🎵 В ${queryTime} играла песня "${title}". Количество лайков: ${likes}`;
   }
