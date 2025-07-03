@@ -46,14 +46,28 @@ async function getPlaylistData() {
   });
 }
 
-function findSong(data, mskDateTime) {
+function findNearestSong(data, mskDateTime) {
   const targetDate = mskDateTime.format("DD.MM.YYYY");
   const targetTime = mskDateTime.format("HH:mm");
-  return data.find(row =>
-    row["Дата выхода"]?.trim() === targetDate &&
-    row["Время выхода"]?.trim() === targetTime
-  );
+
+  const candidates = data
+    .filter(row => row["Дата выхода"]?.trim() === targetDate)
+    .map(row => {
+      const songTimeStr = row["Время выхода"]?.trim();
+      if (!songTimeStr) return null;
+
+      const [h, m, s] = songTimeStr.split(':');
+      const fullTime = dayjs(mskDateTime.format("YYYY-MM-DD")).set('hour', h).set('minute', m).set('second', s || 0);
+      const diff = Math.abs(fullTime.diff(mskDateTime, 'minute'));
+      return { ...row, diff, fullTime };
+    })
+    .filter(Boolean)
+    .filter(item => item.diff <= 10) // ±10 минут
+    .sort((a, b) => a.diff - b.diff); // ближайшая вверх
+
+  return candidates[0] || null;
 }
+
 
 app.post("/chat", async (req, res) => {
   try {
@@ -87,7 +101,7 @@ app.post("/chat", async (req, res) => {
 
       try {
         const data = await getPlaylistData();
-        const song = findSong(data, mskTime);
+        const song = findNearestSong(data, mskTime);
 
         if (song) {
           const reply = `🎵 В ${mskTime.format("HH:mm")} по МСК ${dayWord} играла песня: "${song["Название песни и исполнитель"]}" (👍 ${song["Всего лайков"] || 0}, 👎 ${song["Всего дизлайков"] || 0})`;
