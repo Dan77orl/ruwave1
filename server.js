@@ -41,7 +41,7 @@ app.post("/chat", async (req, res) => { // Проверка наличия OPENA
     ];
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages,
       max_tokens: 500,
       temperature: 0.7
@@ -127,7 +127,7 @@ app.post("/chat", async (req, res) => {
     ];
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages,
       max_tokens: 500,
       temperature: 0.7
