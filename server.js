@@ -73,12 +73,24 @@ function findSongsByDateTime(date, startTime, endTime) {
   const start = toMinutes(startTime);
   const end = toMinutes(endTime);
 
-  return playlist.filter(entry => {
-    if (entry.date !== date) return false;
-    const time = toMinutes(entry.time);
-    return time >= start && time <= end;
+  console.log(`🔍 Ищем песни за ${date} с ${startTime} (${start}) до ${endTime} (${end})`);
+
+  const matches = playlist.filter(entry => {
+    const entryMinutes = toMinutes(entry.time);
+    const isMatch = entry.date === date && entryMinutes >= start && entryMinutes <= end;
+
+    // Отладочная информация по каждой строке
+    if (entry.date === date) {
+      console.log(`🎵 ${entry.date} ${entry.time} → ${entry.song} | Минуты: ${entryMinutes} | Совпадение: ${isMatch}`);
+    }
+
+    return isMatch;
   });
+
+  console.log(`✅ Совпадений найдено: ${matches.length}`);
+  return matches;
 }
+
 
 // 🧠 Парсинг времени и даты через GPT
 async function parseDateTimeWithGPT(userMessage) {
