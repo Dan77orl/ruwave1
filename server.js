@@ -19,23 +19,31 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// 📅 Поддержка вычисления дат
 function todayMinus(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
 }
 
-// 🕐 Приводим время к hh:mm
 function formatTime(raw) {
   if (!raw) return "";
-  const parts = raw.trim().split(":");
+  const cleaned = raw.trim().replace(/\uFEFF/g, "");
+  const parts = cleaned.split(":");
   const h = (parts[0] || "00").padStart(2, "0");
   const m = (parts[1] || "00").padStart(2, "0");
   return `${h}:${m}`;
 }
 
-// 🎵 Плейлист
+function formatDate(raw) {
+  if (!raw) return "";
+  const cleaned = raw.trim().replace(/\uFEFF/g, "");
+  const parts = cleaned.split(".");
+  const d = parts[0]?.padStart(2, "0") || "01";
+  const m = parts[1]?.padStart(2, "0") || "01";
+  const y = parts[2] || new Date().getFullYear();
+  return `${d}.${m}.${y}`;
+}
+
 let playlist = [];
 
 async function loadPlaylist() {
@@ -50,19 +58,20 @@ async function loadPlaylist() {
     const songIdx = headers.findIndex(h => h.includes("song"));
 
     playlist = rows.slice(1).map(row => ({
-      date: row[dateIdx]?.trim(),
+      date: formatDate(row[dateIdx]),
       time: formatTime(row[timeIdx]),
-      song: row[songIdx]?.trim()
+      song: row[songIdx]?.trim().replace(/\uFEFF/g, "") || ""
     })).filter(r => r.date && r.time && r.song);
 
     console.log(`✅ Плейлист загружен: ${playlist.length} записей`);
+    console.log(`📊 Первый элемент:`, playlist[0]);
   } catch (err) {
     console.error("❌ Ошибка загрузки плейлиста:", err);
   }
 }
 
 loadPlaylist();
-setInterval(loadPlaylist, 60 * 60 * 1000); // обновлять каждый час
+setInterval(loadPlaylist, 60 * 60 * 1000);
 
 function findSongsByDateTime(date, startTime, endTime) {
   const toMinutes = t => {
@@ -79,7 +88,6 @@ function findSongsByDateTime(date, startTime, endTime) {
     const entryMinutes = toMinutes(entry.time);
     const isMatch = entry.date === date && entryMinutes >= start && entryMinutes <= end;
 
-    // Отладочная информация по каждой строке
     if (entry.date === date) {
       console.log(`🎵 ${entry.date} ${entry.time} → ${entry.song} | Минуты: ${entryMinutes} | Совпадение: ${isMatch}`);
     }
@@ -91,8 +99,6 @@ function findSongsByDateTime(date, startTime, endTime) {
   return matches;
 }
 
-
-// 🧠 Парсинг времени и даты через GPT
 async function parseDateTimeWithGPT(userMessage) {
   const now = new Date();
   const today = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
@@ -101,12 +107,9 @@ async function parseDateTimeWithGPT(userMessage) {
     {
       role: "system",
       content: `Сегодня ${today}.
-
 Ты — ассистент радиостанции RuWave. Определи дату и диапазон времени из запроса пользователя.
-
 Формат ответа строго JSON:
 {"date":"дд.мм.гггг", "start":"чч:мм", "end":"чч:мм"}
-
 Правила:
 - Если указано "вчера", используй дату: ${todayMinus(1)}
 - Если "позавчера" — ${todayMinus(2)}
@@ -137,7 +140,6 @@ async function parseDateTimeWithGPT(userMessage) {
   }
 }
 
-// 📡 Главный эндпоинт
 app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message?.trim();
@@ -161,7 +163,6 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // GPT для остальных вопросов
     const messages = [
       {
         role: "system",
