@@ -2,6 +2,9 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const OpenAI = require("openai");
+const fetch = require("node-fetch");
+const csv = require("csv-parser");
+const { Readable } = require("stream");
 
 dotenv.config();
 
@@ -18,7 +21,40 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Локальный прайс-лист
+// 🔹 Плейлист
+const PLAYLIST_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv";
+
+let playlistData = [];
+
+async function loadPlaylist() {
+  try {
+    const response = await fetch(PLAYLIST_CSV_URL);
+    const csvText = await response.text();
+    playlistData = [];
+
+    await new Promise((resolve, reject) => {
+      Readable.from([csvText])
+        .pipe(csv())
+        .on("data", (row) => playlistData.push(row))
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    console.log(`✅ Загружено песен: ${playlistData.length}`);
+  } catch (error) {
+    console.error("❌ Ошибка загрузки таблицы:", error.message);
+  }
+}
+
+function findSongByDateTime(date, time) {
+  return playlistData.find(
+    (row) =>
+      row["Дата выхода"]?.trim() === date &&
+      row["Время выхода"]?.trim().startsWith(time)
+  );
+}
+
 const prices = {
   "30 выходов": "€9.40",
   "спонсорство": "от €400 в месяц",
@@ -29,19 +65,35 @@ app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message?.trim();
     if (!userMessage) {
-      console.warn("⚠️ Пустое сообщение от клиента");
       return res.status(400).json({ error: "Сообщение не предоставлено" });
     }
 
-    // Проверка на совпадение в прайс-листе
+    // 🔸 Цены
     for (let key in prices) {
       if (userMessage.toLowerCase().includes(key)) {
         const reply = `Стоимость услуги "${key}": ${prices[key]}`;
-        console.log("✅ Ответ из локального прайс-листа:", reply);
         return res.json({ reply });
       }
     }
 
+    // 🔸 Поиск песни по дате и времени (если есть)
+    const timeMatch = userMessage.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/);
+    if (timeMatch) {
+      const time = timeMatch[0];
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      const dateStr = yesterday.toLocaleDateString("ru-RU").replace(/\//g, ".");
+
+      const found = findSongByDateTime(dateStr, time);
+      if (found) {
+        const name = found["Название"] || found[Object.keys(found)[0]];
+        const reply = `🎵 В ${found["Время выхода"]} ${found["Дата выхода"]} играла песня: "${name}".`;
+        return res.json({ reply });
+      }
+    }
+
+    // 🔸 ChatGPT fallback
     const messages = [
       {
         role: "system",
@@ -52,33 +104,14 @@ app.post("/chat", async (req, res) => {
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
 • Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
-• Google Таблица с плейлистом где есть дата и время и название песен если кто то спросит какая песня была: https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv
-
-Формат таблицы:
-1. Название песни и исполнитель
-2. Дата выхода (дд.мм.гггг)
-4. Время выхода (чч:мм)
-5. Лайк (1/0)
-6. Всего лайков
-7. Дизлайк (1/0)
-8. Всего дизлайков
-(Интеграция с таблицей пока не реализована, но данные должны использоваться.)
+• Таблица содержит: название песни, дату, время, лайки/дизлайки
 
 🧠 Ты умеешь:
-• Отвечать: «Какая песня сейчас играет?», «Что было в 22:30 вчера?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама на RuWave?»
-• Отвечать на русском или турецком — в зависимости от языка запроса
+• Отвечать на вопросы: «Какая песня была в 9:08?», «Что играло вчера в 22:30?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама?»
+• Отвечать на русском или турецком
+• Объяснять выгоды: единственное русское радио, онлайн, недорогая реклама
 
-🎨 Как креативный директор:
-• Придумываешь рекламные тексты: инфо, диалоги, имидж
-• Предлагаешь форматы: джинглы, спонсорство, вставки
-• Объясняешь выгоды:
-  - Единственное русское радио в регионе
-  - Вещание 24/7 FM + Онлайн
-  - Прямая связь с аудиторией
-  - Цены: от €4 до €9.40 / 30 выходов, скидки от бюджета, надбавки за позицию
-  - Спонсорство: от €400/мес, прямые упоминания и ролики
-
-🔥 Пример ответа: «В 19:25 на RuWave звучала “Скользкий путь” от Мэри Крэмбри — песня собрала уже 28 лайков!»`
+🔥 Пример ответа: «В 19:25 звучала “Скользкий путь” от Мэри Крэмбри — 28 лайков!»`
       },
       {
         role: "user",
@@ -93,8 +126,9 @@ app.post("/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
-    console.log("➡️ Ответ от OpenAI:", { reply, usage: completion.usage });
+    const reply =
+      completion?.choices?.[0]?.message?.content ||
+      "⚠️ Ошибка получения ответа от модели.";
     res.json({ reply });
   } catch (err) {
     console.error("❌ Ошибка в /chat:", {
@@ -106,5 +140,9 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+// 🚀 Старт
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
+app.listen(PORT, async () => {
+  await loadPlaylist();
+  console.log(`✅ RuWave сервер запущен на порту ${PORT}`);
+});
