@@ -46,27 +46,16 @@ async function getPlaylistData() {
   });
 }
 
-function findNearestSong(data, mskDateTime) {
-  const targetDate = mskDateTime.format("DD.MM.YYYY");
-  const targetTime = mskDateTime.format("HH:mm");
+const songTimeStr = row["Время выхода"]?.trim();
+if (!songTimeStr) return null;
 
-  const candidates = data
-    .filter(row => row["Дата выхода"]?.trim() === targetDate)
-    .map(row => {
-      const songTimeStr = row["Время выхода"]?.trim();
-      if (!songTimeStr) return null;
+const [h, m, s] = songTimeStr.trim().split(':').map(Number); // <– ВАЖНО
+if (isNaN(h) || isNaN(m)) return null;
 
-      const [h, m, s] = songTimeStr.split(':');
-      const fullTime = dayjs(mskDateTime.format("YYYY-MM-DD")).set('hour', h).set('minute', m).set('second', s || 0);
-      const diff = Math.abs(fullTime.diff(mskDateTime, 'minute'));
-      return { ...row, diff, fullTime };
-    })
-    .filter(Boolean)
-    .filter(item => item.diff <= 10) // ±10 минут
-    .sort((a, b) => a.diff - b.diff); // ближайшая вверх
-
-  return candidates[0] || null;
-}
+const fullTime = dayjs(mskDateTime.format("YYYY-MM-DD"))
+  .set('hour', h)
+  .set('minute', m)
+  .set('second', s || 0);
 
 
 app.post("/chat", async (req, res) => {
