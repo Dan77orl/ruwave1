@@ -56,7 +56,7 @@ app.post("/chat", async (req, res) => {
 
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
-• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/e/2PACX-1vQhW-be2zrRgzXZg8CaLpbq_kZN667bMxyk0vrcT_4dSck826ZSnlNHF8fGtLS8JKASYY6Td9xOlplW/pub?output=csv
 
 🧠 Ты умеешь:
 • Отвечать: «Какая песня сейчас играет?», «Что было в 22:30 вчера?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама на RuWave?»
