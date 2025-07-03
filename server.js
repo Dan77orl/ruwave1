@@ -19,11 +19,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// 📅 Вспомогательная функция
+// 📅 Поддержка вычисления дат
 function todayMinus(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+}
+
+// 🕐 Приводим время к hh:mm
+function formatTime(raw) {
+  if (!raw) return "";
+  const parts = raw.trim().split(":");
+  const h = (parts[0] || "00").padStart(2, "0");
+  const m = (parts[1] || "00").padStart(2, "0");
+  return `${h}:${m}`;
 }
 
 // 🎵 Плейлист
@@ -42,18 +51,18 @@ async function loadPlaylist() {
 
     playlist = rows.slice(1).map(row => ({
       date: row[dateIdx]?.trim(),
-      time: row[timeIdx]?.trim().slice(0, 5), // "1:54:06" → "1:54"
+      time: formatTime(row[timeIdx]),
       song: row[songIdx]?.trim()
     })).filter(r => r.date && r.time && r.song);
 
-    console.log(`✅ Загружено записей: ${playlist.length}`);
+    console.log(`✅ Плейлист загружен: ${playlist.length} записей`);
   } catch (err) {
     console.error("❌ Ошибка загрузки плейлиста:", err);
   }
 }
 
 loadPlaylist();
-setInterval(loadPlaylist, 60 * 60 * 1000); // обновление каждый час
+setInterval(loadPlaylist, 60 * 60 * 1000); // обновлять каждый час
 
 function findSongsByDateTime(date, startTime, endTime) {
   const toMinutes = t => {
@@ -71,6 +80,7 @@ function findSongsByDateTime(date, startTime, endTime) {
   });
 }
 
+// 🧠 Парсинг времени и даты через GPT
 async function parseDateTimeWithGPT(userMessage) {
   const now = new Date();
   const today = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
@@ -82,18 +92,19 @@ async function parseDateTimeWithGPT(userMessage) {
 
 Ты — ассистент радиостанции RuWave. Определи дату и диапазон времени из запроса пользователя.
 
-Формат ответа:
+Формат ответа строго JSON:
 {"date":"дд.мм.гггг", "start":"чч:мм", "end":"чч:мм"}
 
-🔹 Правила:
+Правила:
 - Если указано "вчера", используй дату: ${todayMinus(1)}
 - Если "позавчера" — ${todayMinus(2)}
 - Если "10 дней назад" — ${todayMinus(10)}
-- Если дата указана явно, используй её
-- Если не указано — используй сегодняшнюю (${today})
-- Если время не указано — с 00:00 до 23:59
-- "в 7 вечера" = с 19:00 до 19:59, "в 9 утра" = с 09:00 до 09:59
-- Ответ только в формате JSON — ничего лишнего.`
+- Если дата указана явно — используй её
+- Если не указана — используй сегодняшнюю (${today})
+- Если указано "в 7 вечера", это с 19:00 до 19:59
+- Если указано "в 9 утра", это с 09:00 до 09:59
+- Время всегда в 24-часовом формате
+- Отвечай ТОЛЬКО в формате JSON — никаких пояснений`
     },
     { role: "user", content: userMessage }
   ];
@@ -107,43 +118,42 @@ async function parseDateTimeWithGPT(userMessage) {
 
   const reply = completion.choices[0].message.content;
   try {
-    const json = JSON.parse(reply);
-    return json;
+    return JSON.parse(reply);
   } catch (e) {
-    console.error("❌ Ошибка парсинга JSON от GPT:", reply);
+    console.error("❌ Невозможно распарсить JSON от GPT:", reply);
     return null;
   }
 }
 
+// 📡 Главный эндпоинт
 app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message?.trim();
-    if (!userMessage) return res.status(400).json({ error: "Нет текста сообщения" });
+    if (!userMessage) return res.status(400).json({ error: "Пустое сообщение" });
 
-    const playlistQuery = /что играло|какая песня|что за песня|что было/i.test(userMessage);
-    if (playlistQuery) {
+    const playlistCheck = /что играло|какая песня|что за песня|что было/i.test(userMessage);
+    if (playlistCheck) {
       const dateTime = await parseDateTimeWithGPT(userMessage);
 
       if (dateTime?.date && dateTime?.start && dateTime?.end) {
-        const { date, start, end } = dateTime;
-        const results = findSongsByDateTime(date, start, end);
+        const results = findSongsByDateTime(dateTime.date, dateTime.start, dateTime.end);
 
         if (results.length > 0) {
           const list = results.map(r => r.song).join("\n");
-          return res.json({ reply: `🎧 Песни за ${date} с ${start} до ${end}:\n${list}` });
+          return res.json({ reply: `🎧 Песни за ${dateTime.date} с ${dateTime.start} до ${dateTime.end}:\n${list}` });
         } else {
-          return res.json({ reply: `🎧 За ${date} с ${start} до ${end} песни не найдены.` });
+          return res.json({ reply: `🎧 За ${dateTime.date} с ${dateTime.start} до ${dateTime.end} песни не найдены.` });
         }
       } else {
-        return res.json({ reply: "❌ Не удалось определить дату/время из запроса." });
+        return res.json({ reply: "❌ Не удалось распознать дату и время запроса." });
       }
     }
 
-    // OpenAI — остальное
+    // GPT для остальных вопросов
     const messages = [
       {
         role: "system",
-        content: `Ты — виртуальный агент RuWave 94FM. Помогаешь с эфиром, программами, рекламой, расписанием, плейлистом.`
+        content: `Ты — виртуальный агент RuWave 94FM. Ты отвечаешь на вопросы о радио, программе, рекламе, плейлисте.`
       },
       {
         role: "user",
@@ -158,7 +168,7 @@ app.post("/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
+    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ответ не получен.";
     res.json({ reply });
   } catch (err) {
     console.error("❌ Ошибка в /chat:", err);
@@ -167,4 +177,4 @@ app.post("/chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Сервер RuWave работает на порту ${PORT}`));
