@@ -149,7 +149,7 @@ app.post("/chat", async (req, res) => {
 
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
-• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv
 
 Формат таблицы:
 1. Название песни и исполнитель
