@@ -12,6 +12,7 @@ const weekday = require("dayjs/plugin/weekday");
 const customParseFormat = require("dayjs/plugin/customParseFormat");
 const isSameOrBefore = require("dayjs/plugin/isSameOrBefore");
 const isSameOrAfter = require("dayjs/plugin/isSameOrAfter");
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(weekday);
@@ -45,7 +46,6 @@ async function getPlaylistData() {
 
   return new Promise((resolve, reject) => {
     const results = [];
-    const stream = require("stream");
     const readable = new stream.Readable();
     readable._read = () => {};
     readable.push(data);
@@ -69,13 +69,13 @@ async function getPlaylistData() {
 
 async function findSongAtTime(userDateTime) {
   const data = await getPlaylistData();
-  const target = dayjs(userDateTime, "DD.MM.YYYY HH:mm");
+  const target = dayjs(userDateTime, "DD.MM.YYYY HH:mm:ss");
 
   let closest = null;
   let minDiff = Infinity;
 
   for (let row of data) {
-    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm:ss"); // ⬅️ учитываем секунды
+    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm:ss");
     const diff = Math.abs(target.diff(rowTime));
 
     if (diff < minDiff) {
@@ -89,22 +89,6 @@ async function findSongAtTime(userDateTime) {
   } else {
     return "😕 Не удалось найти песню на это время.";
   }
-}
-
-
-async function findSongsInRange(fromTime, toTime) {
-  const data = await getPlaylistData();
-  const results = [];
-
-  for (let row of data) {
-    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm");
-    if (rowTime.isAfter(fromTime.subtract(1, "minute")) && rowTime.isBefore(toTime.add(1, "minute"))) {
-      results.push(`🕒 ${row.time} — “${row.title}” (👍 ${row.likes || 0}, 👎 ${row.dislikes || 0})`);
-    }
-  }
-
-  if (results.length === 0) return "😕 В этом интервале песен не найдено.";
-  return `🎶 Песни между ${fromTime.format("HH:mm")} и ${toTime.format("HH:mm")}:\n` + results.join("\n");
 }
 
 function parseDateTimeFromMessage(message) {
@@ -133,48 +117,7 @@ function parseDateTimeFromMessage(message) {
   }
 
   if (!date) return null;
-  return date.set("hour", hour).set("minute", minute).set("second", 0);
-}
-
-function parseTimeRangeFromMessage(message) {
-  const now = dayjs().tz("Europe/Istanbul");
-  let baseDate = now;
-
-  const weekdays = {
-    понедельник: 1, вторник: 2, среда: 3,
-    четверг: 4, пятница: 5, суббота: 6, воскресенье: 0
-  };
-
-  for (const [name, index] of Object.entries(weekdays)) {
-    if (message.toLowerCase().includes(name)) {
-      const diff = (index - now.day() + 7) % 7;
-      baseDate = now.add(diff || 7, "day");
-      break;
-    }
-  }
-
-  if (message.includes("вчера")) baseDate = now.subtract(1, "day");
-  if (message.includes("позавчера")) baseDate = now.subtract(2, "day");
-  if (message.includes("сегодня")) baseDate = now;
-
-  if (message.includes("утром")) baseDate = baseDate.set("hour", 8);
-  if (message.includes("днём")) baseDate = baseDate.set("hour", 13);
-  if (message.includes("вечером")) baseDate = baseDate.set("hour", 18);
-  if (message.includes("ночью")) baseDate = baseDate.set("hour", 23);
-
-  const rangeMatch = message.match(/(?:между|с|от)\s*(\d{1,2})(?::(\d{2}))?\s*(?:и|до|-)\s*(\d{1,2})(?::(\d{2}))?/i);
-  if (!rangeMatch) return null;
-
-  const h1 = parseInt(rangeMatch[1]);
-  const m1 = rangeMatch[2] ? parseInt(rangeMatch[2]) : 0;
-  const h2 = parseInt(rangeMatch[3]);
-  const m2 = rangeMatch[4] ? parseInt(rangeMatch[4]) : 0;
-
-  const from = baseDate.set("hour", h1).set("minute", m1).set("second", 0);
-  const to = baseDate.set("hour", h2).set("minute", m2).set("second", 0);
-
-  if (from.isAfter(to)) return null;
-  return { from, to };
+  return date.set("hour", hour).set("minute", minute).set("second", 0).format("DD.MM.YYYY HH:mm:ss");
 }
 
 app.post("/chat", async (req, res) => {
@@ -189,17 +132,10 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // Диапазон времени
-    const range = parseTimeRangeFromMessage(userMessage);
-    if (range) {
-      const reply = await findSongsInRange(range.from, range.to);
-      return res.json({ reply });
-    }
-
-    // Конкретное время
+    // Поиск песни по времени
     const dateTime = parseDateTimeFromMessage(userMessage);
     if (dateTime) {
-      const reply = await findSongAtTime(dateTime.format("DD.MM.YYYY HH:mm"));
+      const reply = await findSongAtTime(dateTime);
       return res.json({ reply });
     }
 
@@ -207,7 +143,7 @@ app.post("/chat", async (req, res) => {
     const messages = [
       {
         role: "system",
-        content: `Ты — виртуальный агент RuWave 94FM, единственной русскоязычной радиостанции в Турции...`
+        content: `Ты — виртуальный агент RuWave 94FM, русскоязычной радиостанции в Турции...`
       },
       { role: "user", content: userMessage }
     ];
