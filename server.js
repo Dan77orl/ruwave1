@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const fetch = require("node-fetch"); // Для загрузки CSV
+const fetch = require("node-fetch");
 const OpenAI = require("openai");
 
 dotenv.config();
@@ -20,13 +20,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Переменная для хранения цен
+// Переменные для хранения данных
 let prices = {};
+let playlist = [];
 
 // Функция загрузки цен из Google Sheets
 async function loadPrices() {
   try {
-    const res = await fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv");
+    const res = await fetch(
+      "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv"
+    );
     const text = await res.text();
     const rows = text.trim().split("\n");
 
@@ -45,9 +48,103 @@ async function loadPrices() {
   }
 }
 
-// Загружаем при запуске и обновляем каждые 5 минут
+// Функция загрузки плейлиста из Google Sheets
+async function loadPlaylist() {
+  try {
+    const res = await fetch(
+      "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv"
+    );
+    const text = await res.text();
+    const rows = text.trim().split("\n");
+    
+    const headers = rows[0].split(",");
+    const newPlaylist = [];
+    
+    for (let i = 1; i < rows.length; i++) {
+      const [song, date, time, likes, totalLikes, dislikes, totalDislikes] = rows[i].split(",");
+      if (song && date && time) {
+        newPlaylist.push({
+          song: song.trim(),
+          date: date.trim(),
+          time: time.trim(),
+          likes: likes ? parseInt(likes) : 0,
+          totalLikes: totalLikes ? parseInt(totalLikes) : 0,
+          dislikes: dislikes ? parseInt(dislikes) : 0,
+          totalDislikes: totalDislikes ? parseInt(totalDislikes) : 0,
+        });
+      }
+    }
+
+    playlist = newPlaylist;
+    console.log("✅ Плейлист обновлён:", playlist.length, "песен");
+  } catch (err) {
+    console.error("❌ Ошибка загрузки плейлиста:", err);
+  }
+}
+
+// Функция для парсинга времени и даты из запроса пользователя
+function parseDateTimeFromMessage(message) {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0]; // Формат YYYY-MM-DD
+
+  const timeRangeRegex = /(\d{1,2}):(\d{2})\s*(?:до|to|-)\s*(\d{1,2}):(\d{2})/i;
+  const exactTimeRegex = /(\d{1,2}):(\d{2})/;
+  const dateRegex = /(\d{2})\.(\d{2})\.(\d{4})/;
+
+  let date = yesterdayStr;
+  let startTime = null;
+  let endTime = null;
+  let exactTime = null;
+
+  const dateMatch = message.match(dateRegex);
+  if (dateMatch) {
+    date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`; // DD.MM.YYYY -> YYYY-MM-DD
+  }
+
+  const timeRangeMatch = message.match(timeRangeRegex);
+  if (timeRangeMatch) {
+    startTime = `${timeRangeMatch[1]}:${timeRangeMatch[2]}`;
+    endTime = `${timeRangeMatch[3]}:${timeRangeMatch[4]}`;
+  } else {
+    const exactTimeMatch = message.match(exactTimeRegex);
+    if (exactTimeMatch) {
+      exactTime = `${exactTimeMatch[1]}:${exactTimeMatch[2]}`;
+    }
+  }
+
+  return { date, startTime, endTime, exactTime };
+}
+
+// Функция для поиска песен по дате и времени
+function findSongsByDateTime(date, startTime, endTime, exactTime) {
+  const normalizeTime = (time) => {
+    const [hours, minutes] = time.split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const filteredSongs = playlist.filter((entry) => {
+    if (entry.date !== date) return false;
+
+    if (exactTime) {
+      return entry.time === exactTime;
+    } else if (startTime && endTime) {
+      const entryMinutes = normalizeTime(entry.time);
+      const startMinutes = normalizeTime(startTime);
+      const endMinutes = normalizeTime(endTime);
+      return entryMinutes >= startMinutes && entryMinutes <= endMinutes;
+    }
+    return false;
+  });
+
+  return filteredSongs;
+}
+
+// Загружаем данные при запуске и обновляем каждые 5 минут
 loadPrices();
+loadPlaylist();
 setInterval(loadPrices, 5 * 60 * 1000);
+setInterval(loadPlaylist, 5 * 60 * 1000);
 
 app.post("/chat", async (req, res) => {
   try {
@@ -74,7 +171,30 @@ app.post("/chat", async (req, res) => {
       return res.json({ reply });
     }
 
-    // Если не нашли цену, спрашиваем у OpenAI
+    // Проверяем, спрашивает ли пользователь про песни
+    if (
+      userMessage.toLowerCase().includes("какая песня") ||
+      userMessage.toLowerCase().includes("что играло") ||
+      userMessage.toLowerCase().includes("плейлист")
+    ) {
+      const { date, startTime, endTime, exactTime } = parseDateTimeFromMessage(userMessage);
+      const songs = findSongsByDateTime(date, startTime, endTime, exactTime);
+
+      if (songs.length > 0) {
+        let reply = "🎵 В указанное время играли следующие песни:\n";
+        songs.forEach((song) => {
+          reply += `• ${song.song} в ${song.time} (Лайков: ${song.totalLikes}, Дизлайков: ${song.totalDislikes})\n`;
+        });
+        console.log("✅ Ответ из плейлиста:", reply);
+        return res.json({ reply });
+      } else {
+        const reply = "⚠️ Не удалось найти песни за указанное время.";
+        console.log("⚠️ Песни не найдены:", { date, startTime, endTime, exactTime });
+        return res.json({ reply });
+      }
+    }
+
+    // Если не нашли цену или песни, спрашиваем у OpenAI
     const messages = [
       {
         role: "system",
@@ -84,7 +204,7 @@ app.post("/chat", async (req, res) => {
 
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
-• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv
 
 Формат таблицы:
 1. Название песни и исполнитель
