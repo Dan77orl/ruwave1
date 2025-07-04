@@ -45,6 +45,7 @@ async function getPlaylistData() {
 
   return new Promise((resolve, reject) => {
     const results = [];
+    const stream = require("stream");
     const readable = new stream.Readable();
     readable._read = () => {};
     readable.push(data);
@@ -54,7 +55,7 @@ async function getPlaylistData() {
       .pipe(csv())
       .on("data", (row) => {
         results.push({
-          title: row["Название"] || row["Песня"],
+          title: row["Song"],
           date: row["Дата"],
           time: row["Время"],
           likes: row["Всего лайков"],
@@ -74,8 +75,9 @@ async function findSongAtTime(userDateTime) {
   let minDiff = Infinity;
 
   for (let row of data) {
-    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm");
+    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm:ss"); // ⬅️ учитываем секунды
     const diff = Math.abs(target.diff(rowTime));
+
     if (diff < minDiff) {
       minDiff = diff;
       closest = row;
@@ -88,6 +90,7 @@ async function findSongAtTime(userDateTime) {
     return "😕 Не удалось найти песню на это время.";
   }
 }
+
 
 async function findSongsInRange(fromTime, toTime) {
   const data = await getPlaylistData();
