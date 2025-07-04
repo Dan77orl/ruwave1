@@ -1,24 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const fetch = require("node-fetch"); // Для загрузки CSV
 const OpenAI = require("openai");
-const fetch = require("node-fetch");
-const csv = require("csv-parser");
-const stream = require("stream");
-const dayjs = require("dayjs");
-const utc = require("dayjs/plugin/utc");
-const timezone = require("dayjs/plugin/timezone");
-const weekday = require("dayjs/plugin/weekday");
-const customParseFormat = require("dayjs/plugin/customParseFormat");
-const isSameOrBefore = require("dayjs/plugin/isSameOrBefore");
-const isSameOrAfter = require("dayjs/plugin/isSameOrAfter");
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.extend(weekday);
-dayjs.extend(customParseFormat);
-dayjs.extend(isSameOrBefore);
-dayjs.extend(isSameOrAfter);
 
 dotenv.config();
 
@@ -31,121 +15,96 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Инициализация OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-const prices = {
-  "30 выходов": "€9.40",
-  "спонсорство": "от €400 в месяц",
-  "джингл": "от €15"
-};
+// Переменная для хранения цен
+let prices = {};
 
-async function getPlaylistData() {
-  const url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv";
-  const response = await fetch(url);
-  const data = await response.text();
+// Функция загрузки цен из Google Sheets
+async function loadPrices() {
+  try {
+    const res = await fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv");
+    const text = await res.text();
+    const rows = text.trim().split("\n");
 
-  return new Promise((resolve, reject) => {
-    const results = [];
-    const readable = new stream.Readable();
-    readable._read = () => {};
-    readable.push(data);
-    readable.push(null);
-
-    readable
-      .pipe(csv())
-      .on("data", (row) => {
-        results.push({
-          title: row["Song"],
-          date: row["Дата"],
-          time: row["Время"],
-          likes: row["Всего лайков"],
-          dislikes: row["Всего дизлайков"]
-        });
-      })
-      .on("end", () => resolve(results))
-      .on("error", reject);
-  });
-}
-
-async function findSongAtTime(userDateTime) {
-  const data = await getPlaylistData();
-  const target = dayjs(userDateTime, "DD.MM.YYYY HH:mm:ss");
-
-  let closest = null;
-  let minDiff = Infinity;
-
-  for (let row of data) {
-    const rowTime = dayjs(`${row.date} ${row.time}`, "DD.MM.YYYY HH:mm:ss");
-    const diff = Math.abs(target.diff(rowTime));
-
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = row;
+    const newPrices = {};
+    for (let row of rows) {
+      const [name, price] = row.split(",");
+      if (name && price) {
+        newPrices[name.trim().toLowerCase()] = price.trim();
+      }
     }
-  }
 
-  if (closest) {
-    return `🎵 В ${closest.time} ${closest.date} на RuWave звучала “${closest.title}” — 👍 ${closest.likes || 0}, 👎 ${closest.dislikes || 0}`;
-  } else {
-    return "😕 Не удалось найти песню на это время.";
+    prices = newPrices;
+    console.log("✅ Цены обновлены:", prices);
+  } catch (err) {
+    console.error("❌ Ошибка загрузки цен:", err);
   }
 }
 
-function parseDateTimeFromMessage(message) {
-  const now = dayjs().tz("Europe/Istanbul");
-  const timeMatch = message.match(/(\d{1,2}):(\d{2})/);
-  const hour = timeMatch ? parseInt(timeMatch[1]) : now.hour();
-  const minute = timeMatch ? parseInt(timeMatch[2]) : now.minute();
-  let date = null;
-
-  if (message.includes("сейчас")) date = now;
-  else if (message.includes("вчера")) date = now.subtract(1, "day");
-  else if (message.includes("позавчера")) date = now.subtract(2, "day");
-  else if (message.includes("сегодня")) date = now;
-  else {
-    const dateMatch = message.match(/(\d{1,2})\s?(июля|июня|мая|апреля|марта|февраля|января)/i);
-    if (dateMatch) {
-      const day = parseInt(dateMatch[1]);
-      const monthMap = {
-        января: 0, февраля: 1, марта: 2, апреля: 3, мая: 4, июня: 5,
-        июля: 6, августа: 7, сентября: 8, октября: 9, ноября: 10, декабря: 11
-      };
-      const month = monthMap[dateMatch[2].toLowerCase()];
-      const year = now.year();
-      date = now.set("year", year).set("month", month).set("date", day);
-    }
-  }
-
-  if (!date) return null;
-  return date.set("hour", hour).set("minute", minute).set("second", 0).format("DD.MM.YYYY HH:mm:ss");
-}
+// Загружаем при запуске и обновляем каждые 5 минут
+loadPrices();
+setInterval(loadPrices, 5 * 60 * 1000);
 
 app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message?.trim();
-    if (!userMessage) return res.status(400).json({ error: "Сообщение не предоставлено" });
+    if (!userMessage) {
+      console.warn("⚠️ Пустое сообщение от клиента");
+      return res.status(400).json({ error: "Сообщение не предоставлено" });
+    }
 
-    // Цены
-    for (let key in prices) {
+    // Проверяем, спрашивает ли пользователь про цену
+    let foundKey = null;
+    let foundPrice = null;
+    for (const key in prices) {
       if (userMessage.toLowerCase().includes(key)) {
-        return res.json({ reply: `Стоимость услуги "${key}": ${prices[key]}` });
+        foundKey = key;
+        foundPrice = prices[key];
+        break;
       }
     }
 
-    // Поиск песни по времени
-    const dateTime = parseDateTimeFromMessage(userMessage);
-    if (dateTime) {
-      const reply = await findSongAtTime(dateTime);
+    if (foundPrice) {
+      const reply = `💰 Актуальная стоимость "${foundKey}": ${foundPrice}`;
+      console.log("✅ Ответ из прайс-листа:", reply);
       return res.json({ reply });
     }
 
-    // GPT-4 ответ
+    // Если не нашли цену, спрашиваем у OpenAI
     const messages = [
       {
         role: "system",
-        content: `Ты — виртуальный агент RuWave 94FM, русскоязычной радиостанции в Турции...`
+        content: `Ты — виртуальный агент RuWave 94FM, единственной русскоязычной радиостанции в Турции (Аланья, Газипаша, Манавгат), вещающей на частоте 94.5 FM и онлайн через ruwave.net, ruwave.net.tr и myradio24.com/ruwave.
+
+🎙️ Ты — голос эфира и креативный мозг: энергичный ведущий, знающий весь плейлист и расписание программ, и креативный директор с 25-летним опытом в рекламе.
+
+🎧 ТВОИ РЕСУРСЫ:
+• Instagram: @ruwave_alanya
+• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+
+Формат таблицы:
+1. Название песни и исполнитель
+2. Дата выхода
+3. Время выхода
+4. Лайк
+5. Всего лайков
+6. Дизлайк
+7. Всего дизлайков
+
+🧠 Ты умеешь:
+• Отвечать на вопросы о песнях, программах и рекламе
+• Говорить на русском и турецком
+• Придумывать креативные тексты и предложения
+🔥 Пример ответа: «В 19:25 на RuWave звучала “Скользкий путь” от Мэри Крэмбри — песня собрала уже 28 лайков!»`
       },
-      { role: "user", content: userMessage }
+      {
+        role: "user",
+        content: userMessage
+      }
     ];
 
     const completion = await openai.chat.completions.create({
@@ -155,10 +114,15 @@ app.post("/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа.";
+    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
+    console.log("➡️ Ответ от OpenAI:", { reply });
     res.json({ reply });
   } catch (err) {
-    console.error("❌ Ошибка в /chat:", err);
+    console.error("❌ Ошибка в /chat:", {
+      message: err.message,
+      status: err.status,
+      stack: err.stack
+    });
     res.status(500).json({ error: "Ошибка сервера", detail: err.message });
   }
 });
