@@ -5,62 +5,6 @@ const OpenAI = require("openai");
 
 dotenv.config();
 
-app.post("/chat", async (req, res) => { // Проверка наличия OPENAI_API_KEY
-  try {
-    const userMessage = req.body.message?.trim();
-    if (!userMessage) {
-      console.warn("⚠️ Пустое сообщение от клиента");
-      return res.status(400).json({ error: "Сообщение не предоставлено" });
-    }
-
-    // Проверка цен
-    let foundPrice = null;
-    for (let key in prices) {
-      if (userMessage.toLowerCase().includes(key)) {
-        foundPrice = prices[key];
-        break;
-      }
-    }
-
-    if (foundPrice) {
-      const reply = `Стоимость услуги "${key}": ${foundPrice}`;
-      console.log("✅ Ответ из локального прайс-листа:", reply);
-      return res.json({ reply });
-    }
-
-    // Запрос к OpenAI
-    const messages = [
-      {
-        role: "system",
-        content: `Ты — виртуальный агент RuWave... (твой длинный промпт)`
-      },
-      {
-        role: "user",
-        content: userMessage
-      }
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages,
-      max_tokens: 500,
-      temperature: 0.7
-    });
-
-    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
-    console.log("➡️ Ответ от OpenAI:", { reply, usage: completion.usage });
-    res.json({ reply });
-  } catch (err) {
-    console.error("❌ Ошибка в /chat:", {
-      message: err.message,
-      status: err.status,
-      stack: err.stack
-    });
-    res.status(500).json({ error: "Ошибка сервера", detail: err.message });
-  }
-}); // Проверка наличия OPENAI_API_KEY
-
-// Проверка наличия OPENAI_API_KEY
 if (!process.env.OPENAI_API_KEY) {
   console.error("❌ Ошибка: OPENAI_API_KEY не задан в .env файле");
   process.exit(1);
@@ -70,10 +14,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Инициализация OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+// Локальный прайс-лист
+const prices = {
+  "30 выходов": "€9.40",
+  "спонсорство": "от €400 в месяц",
+  "джингл": "от €15"
+};
 
 app.post("/chat", async (req, res) => {
   try {
@@ -81,6 +31,15 @@ app.post("/chat", async (req, res) => {
     if (!userMessage) {
       console.warn("⚠️ Пустое сообщение от клиента");
       return res.status(400).json({ error: "Сообщение не предоставлено" });
+    }
+
+    // Проверка на совпадение в прайс-листе
+    for (let key in prices) {
+      if (userMessage.toLowerCase().includes(key)) {
+        const reply = `Стоимость услуги "${key}": ${prices[key]}`;
+        console.log("✅ Ответ из локального прайс-листа:", reply);
+        return res.json({ reply });
+      }
     }
 
     const messages = [
@@ -93,6 +52,7 @@ app.post("/chat", async (req, res) => {
 🎧 ТВОИ РЕСУРСЫ:
 • Instagram: @ruwave_alanya
 • Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/1GAp46OM1pEaUBtBkxgGkGQEg7BUh9NZnXcSFmBkK-HM/edit
+• Google Таблица с плейлистом где есть дата и время и название песен если кто то спросит какая песня была: https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv
 
 Формат таблицы:
 1. Название песни и исполнитель
