@@ -2,91 +2,99 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const OpenAI = require("openai");
+const fetch = require("node-fetch");
+const csv = require("csv-parser");
+const { Readable } = require("stream");
+const dayjs = require("dayjs");
 
 dotenv.config();
-
-if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ Ошибка: OPENAI_API_KEY не задан в .env файле");
-  process.exit(1);
-}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ Ошибка: OPENAI_API_KEY не задан");
+  process.exit(1);
+}
 
-// Локальный прайс-лист
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 const prices = {
   "30 выходов": "€9.40",
   "спонсорство": "от €400 в месяц",
   "джингл": "от €15"
 };
 
+// Ссылка на опубликованную таблицу (CSV)
+const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
+
+async function fetchSongs() {
+  const res = await fetch(sheetUrl);
+  const text = await res.text();
+
+  return new Promise((resolve, reject) => {
+    const rows = [];
+    Readable.from([text])
+      .pipe(csv())
+      .on("data", (row) => rows.push(row))
+      .on("end", () => resolve(rows))
+      .on("error", reject);
+  });
+}
+
 app.post("/chat", async (req, res) => {
+  const userMessage = req.body.message?.trim();
+  if (!userMessage) {
+    return res.status(400).json({ error: "Пустое сообщение" });
+  }
+
+  // Проверка цен
+  for (let key in prices) {
+    if (userMessage.toLowerCase().includes(key)) {
+      const reply = `Стоимость услуги "${key}": ${prices[key]}`;
+      return res.json({ reply });
+    }
+  }
+
+  // Проверка запроса вида "что играло в [дата/время]"
+  const regex = /(?:в\s)?(\d{1,2}[:.]\d{2})(?:\s)?(?:([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}))?/;
+  const match = userMessage.match(regex);
+  if (match) {
+    const time = match[1].replace(".", ":");
+    const date = match[2]
+      ? dayjs(match[2], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY")
+      : dayjs().format("DD.MM.YYYY");
+
+    try {
+      const songs = await fetchSongs();
+      const song = songs.find((row) => row["Дата"] === date && row["Время"] === time);
+
+      if (song) {
+        return res.json({
+          reply: `🎶 В ${time} (${date}) играла песня: ${song["Песня"]}`
+        });
+      } else {
+        return res.json({
+          reply: `🤷 Не нашёл песню на ${time} ${date}`
+        });
+      }
+    } catch (err) {
+      console.error("Ошибка загрузки песен:", err);
+      return res.status(500).json({ error: "Ошибка чтения таблицы" });
+    }
+  }
+
+  // Если не песня и не цена — отправляем в OpenAI
+  const messages = [
+    {
+      role: "system",
+      content: `Ты — виртуальный агент RuWave 94FM, энергичный креативный ассистент с опытом в радио и рекламе. Ты можешь придумывать рекламные тексты, отвечать на вопросы о радио, услугах, программе и музыке.`
+    },
+    { role: "user", content: userMessage }
+  ];
+
   try {
-    const userMessage = req.body.message?.trim();
-    if (!userMessage) {
-      console.warn("⚠️ Пустое сообщение от клиента");
-      return res.status(400).json({ error: "Сообщение не предоставлено" });
-    }
-
-    // Проверка на совпадение в прайс-листе
-    for (let key in prices) {
-      if (userMessage.toLowerCase().includes(key)) {
-        const reply = `Стоимость услуги "${key}": ${prices[key]}`;
-        console.log("✅ Ответ из локального прайс-листа:", reply);
-        return res.json({ reply });
-      }
-    }
-
-    const messages = [
-      {
-        role: "system",
-        content: `Ты — виртуальный агент RuWave 94FM, единственной русскоязычной радиостанции в Турции (Аланья, Газипаша, Манавгат), вещающей на частоте 94.5 FM и онлайн через ruwave.net, ruwave.net.tr и myradio24.com/ruwave.
-
-🎙️ Ты — голос эфира и креативный мозг: энергичный ведущий, знающий весь плейлист и расписание программ, и креативный директор с 25-летним опытом в рекламе (Cannes Lions, Clio, Effie, Red Apple). И ты знаешь какая сейчас дата и время.
-
-🎧 ТВОИ РЕСУРСЫ:
-• Instagram: @ruwave_alanya
-Список песен которые звучали на RuWave: https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv
-• Google Таблица с плейлистом: https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv
-• Google Таблица с плейлистом где есть дата и время и название песен если кто то спросит какая песня была: https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv
-
-Формат таблицы:
-1. Дата выхода (дд.мм.гггг)
-2. Время выхода (чч:мм)
-4. Название песни и исполнитель
-5. Лайк (1/0)
-6. Всего лайков
-7. Дизлайк (1/0)
-8. Всего дизлайков
-(Интеграция с таблицей пока не реализована, но данные должны использоваться.)
-
-🧠 Ты умеешь:
-• Отвечать: «Какая песня сейчас играет?», «Что было в 22:30 вчера?», «Что за программа “Экспресс в прошлое”?», «Сколько стоит реклама на RuWave?»
-• Отвечать на русском или турецком — в зависимости от языка запроса
-
-🎨 Как креативный директор:
-• Придумываешь рекламные тексты: инфо, диалоги, имидж
-• Предлагаешь форматы: джинглы, спонсорство, вставки
-• Объясняешь выгоды:
-  - Единственное русское радио в регионе
-  - Вещание 24/7 FM + Онлайн
-  - Прямая связь с аудиторией
-  - Цены: от €4 до €9.40 / 30 выходов, скидки от бюджета, надбавки за позицию
-  - Спонсорство: от €400/мес, прямые упоминания и ролики
-
-🔥 Пример ответа: «В 19:25 на RuWave звучала “Скользкий путь” от Мэри Крэмбри — песня собрала уже 28 лайков!»`
-      },
-      {
-        role: "user",
-        content: userMessage
-      }
-    ];
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages,
@@ -94,16 +102,11 @@ app.post("/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion?.choices?.[0]?.message?.content || "⚠️ Ошибка получения ответа от модели.";
-    console.log("➡️ Ответ от OpenAI:", { reply, usage: completion.usage });
+    const reply = completion.choices?.[0]?.message?.content || "⚠️ Не получил ответ от GPT";
     res.json({ reply });
   } catch (err) {
-    console.error("❌ Ошибка в /chat:", {
-      message: err.message,
-      status: err.status,
-      stack: err.stack
-    });
-    res.status(500).json({ error: "Ошибка сервера", detail: err.message });
+    console.error("OpenAI ошибка:", err);
+    res.status(500).json({ error: "Ошибка GPT", detail: err.message });
   }
 });
 
