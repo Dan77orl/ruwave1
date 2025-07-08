@@ -26,7 +26,7 @@ const prices = {
   "джингл": "от €15"
 };
 
-// Ссылка на опубликованную таблицу (CSV)
+// Ссылка на опубликованную таблицу (CSV) в которой есть список песен и когда и во сколько они играли на радио
 const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv";
 
 async function fetchSongs() {
