@@ -84,7 +84,27 @@ app.post("/chat", async (req, res) => {
       return res.status(500).json({ error: "Ошибка чтения таблицы" });
     }
   }
+  
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun } = require("docx");
 
+const doc = new Document({
+  sections: [
+    {
+      properties: {},
+      children: [
+        new Paragraph({ text: `Время: ${now}` }),
+        new Paragraph({ text: `Вопрос: ${userMessage}` }),
+        new Paragraph({ text: `Ответ: ${reply}` }),
+        new Paragraph({ text: `---` }),
+      ],
+    },
+  ],
+});
+
+Packer.toBuffer(doc).then((buffer) => {
+  fs.writeFileSync("chat-history.docx", buffer);
+});
   // Если не песня и не цена — отправляем в OpenAI
   const messages = [
     {
