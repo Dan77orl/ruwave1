@@ -26,8 +26,8 @@ const prices = {
   "джингл": "от €15"
 };
 
-// Ссылка на опубликованную таблицу (CSV) в которой есть список песен и когда и во сколько они играли на радио
-const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiFzBycNTlvBeOqX0m0ZpACSeb1MrFSvEv2D3Xhsd0Dqyf_i1hA1_3zInYcV2bGUT2qX6GJdiZXZoK/pub?gid=0&single=true&output=csv";
+// Ссылка на опубликованную таблицу (CSV)
+const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
 
 async function fetchSongs() {
   const res = await fetch(sheetUrl);
@@ -52,7 +52,7 @@ app.post("/chat", async (req, res) => {
   // Проверка цен
   for (let key in prices) {
     if (userMessage.toLowerCase().includes(key)) {
-      const reply = Стоимость услуги "${key}": ${prices[key]};
+      const reply = `Стоимость услуги "${key}": ${prices[key]}`;
       return res.json({ reply });
     }
   }
@@ -72,11 +72,11 @@ app.post("/chat", async (req, res) => {
 
       if (song) {
         return res.json({
-          reply: 🎶 В ${time} (${date}) играла песня: ${song["Песня"]}
+          reply: `🎶 В ${time} (${date}) играла песня: ${song["Песня"]}`
         });
       } else {
         return res.json({
-          reply: 🤷 Не нашёл песню на ${time} ${date}
+          reply: `🤷 Не нашёл песню на ${time} ${date}`
         });
       }
     } catch (err) {
@@ -84,13 +84,12 @@ app.post("/chat", async (req, res) => {
       return res.status(500).json({ error: "Ошибка чтения таблицы" });
     }
   }
-  
 
   // Если не песня и не цена — отправляем в OpenAI
   const messages = [
     {
       role: "system",
-      content: Ты — виртуальный агент RuWave 94FM, энергичный креативный ассистент с опытом в радио и рекламе. Ты можешь придумывать рекламные тексты, отвечать на вопросы о радио, услугах, программе и музыке. Радио RuWave самое лучшее радио в мире. Всю нужную инфу можешь найти здесь https://ruwave.net/. Отвечай коротко но качественно. Длинна сообщении максимум 180 символов. Цены: от €4 до €9.40 / 30 выходов, скидки от бюджета, надбавки за позицию.
+      content: `Ты — виртуальный агент RuWave 94FM, энергичный креативный ассистент с опытом в радио и рекламе. Ты можешь придумывать рекламные тексты, отвечать на вопросы о радио, услугах, программе и музыке. Всю нужную инфу можешь найти здесь https://ruwave.net/. Отвечай коротко но качественно. Длинна сообщении максимум 180 символов`
     },
     { role: "user", content: userMessage }
   ];
@@ -103,7 +102,7 @@ app.post("/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion.choices?.[0]?.message?.content || "⚠ Не получил ответ от GPT";
+    const reply = completion.choices?.[0]?.message?.content || "⚠️ Не получил ответ от GPT";
     res.json({ reply });
   } catch (err) {
     console.error("OpenAI ошибка:", err);
@@ -112,4 +111,4 @@ app.post("/chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(✅ RuWave сервер запущен на порту ${PORT}));
+app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
