@@ -1,48 +1,3 @@
-const express = require("express");
-const cors = require("cors");
-const dotenv = require("dotenv");
-const OpenAI = require("openai");
-const fetch = require("node-fetch");
-const csv = require("csv-parser");
-const { Readable } = require("stream");
-const dayjs = require("dayjs");
-
-dotenv.config();
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ Ошибка: OPENAI_API_KEY не задан");
-  process.exit(1);
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const prices = {
-  "30 выходов": "€9.40",
-  "спонсорство": "от €400 в месяц",
-  "джингл": "от €15"
-};
-
-// Ссылка на опубликованную таблицу (CSV)
-const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
-
-async function fetchSongs() {
-  const res = await fetch(sheetUrl);
-  const text = await res.text();
-
-  return new Promise((resolve, reject) => {
-    const rows = [];
-    Readable.from([text])
-      .pipe(csv())
-      .on("data", (row) => rows.push(row))
-      .on("end", () => resolve(rows))
-      .on("error", reject);
-  });
-}
-
 app.post("/chat", async (req, res) => {
   const userMessage = req.body.message?.trim();
   if (!userMessage) {
@@ -57,18 +12,26 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Проверка запроса вида "что играло в [дата/время]"
-  const regex = /(?:в\s)?(\d{1,2}[:.]\d{2})(?:\s)?(?:([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}))?/;
+  // ✅ Новый и улучшенный парсинг запроса вида "что играло в [время] [дата]"
+  const regex = /(?:в\s*)?(\d{1,2}[:.]\d{2})\s*(?:в\s*)?(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?/i;
   const match = userMessage.match(regex);
+
   if (match) {
-    const time = match[1].replace(".", ":");
+    const inputTime = match[1].replace(".", ":");
+    const [h, m] = inputTime.split(":");
+    const time = `${parseInt(h)}:${m}`; // Преобразует 09:00 → 9:00
+
     const date = match[2]
       ? dayjs(match[2], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY")
       : dayjs().format("DD.MM.YYYY");
 
     try {
       const songs = await fetchSongs();
-      const song = songs.find((row) => row["Дата"] === date && row["Время"] === time);
+      const song = songs.find((row) => {
+        const songDate = row["Дата"]?.trim();
+        const songTime = row["Время"]?.trim();
+        return songDate === date && songTime === time;
+      });
 
       if (song) {
         return res.json({
@@ -109,6 +72,3 @@ app.post("/chat", async (req, res) => {
     res.status(500).json({ error: "Ошибка GPT", detail: err.message });
   }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ RuWave сервер запущен на порту ${PORT}`));
