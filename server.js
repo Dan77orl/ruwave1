@@ -26,6 +26,7 @@ const prices = {
   "джингл": "от €15"
 };
 
+// Путь к CSV-версии Google Таблицы
 const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
 
 async function fetchSongs() {
@@ -56,19 +57,24 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Новый надёжный парсинг даты и времени
-  const timeMatch = userMessage.match(/\b(\d{1,2})[:.](\d{2})\b/);
-  const dateMatch = userMessage.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/);
+  // Поиск даты и времени
+  const dateRegex = /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/;
+  const timeRegex = /\b(\d{1,2})[:.](\d{2})\b/;
 
-  if (timeMatch && dateMatch) {
-    const rawTime = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
-    const rawDate = `${dateMatch[1].padStart(2, "0")}.${dateMatch[2].padStart(2, "0")}.${dateMatch[3].padStart(4, "20")}`;
+  const dateMatch = userMessage.match(dateRegex);
+  const timeMatch = userMessage.match(timeRegex);
 
-    const time = rawTime;
-    const date = dayjs(rawDate, "DD.MM.YYYY").format("DD.MM.YYYY");
+  if (dateMatch && timeMatch) {
+    const date = dayjs(
+      `${dateMatch[1].padStart(2, "0")}.${dateMatch[2].padStart(2, "0")}.${dateMatch[3].padStart(4, "20")}`,
+      "DD.MM.YYYY"
+    ).format("DD.MM.YYYY");
+
+    const time = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
 
     try {
       const songs = await fetchSongs();
+
       const song = songs.find((row) => {
         const rowDate = row["Дата"]?.trim();
         const rowTime = row["Время"]?.trim().slice(0, 5);
@@ -85,12 +91,12 @@ app.post("/chat", async (req, res) => {
         });
       }
     } catch (err) {
-      console.error("Ошибка загрузки песен:", err);
+      console.error("Ошибка чтения таблицы:", err);
       return res.status(500).json({ error: "Ошибка чтения таблицы" });
     }
   }
 
-  // GPT-ответ
+  // GPT-ответ, если не дата и не цена
   const messages = [
     {
       role: "system",
