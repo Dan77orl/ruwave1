@@ -26,7 +26,6 @@ const prices = {
   "джингл": "от €15"
 };
 
-// Ссылка на таблицу с песнями (CSV)
 const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
 
 async function fetchSongs() {
@@ -57,23 +56,17 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Обработка даты и времени
-  const regex = /(?:в\s*)?([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4})\s+(\d{1,2}[:.]\d{2})|(\d{1,2}[:.]\d{2})\s+([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4})/;
-  const match = userMessage.match(regex);
+  // Новый надёжный парсинг даты и времени
+  const timeMatch = userMessage.match(/\b(\d{1,2})[:.](\d{2})\b/);
+  const dateMatch = userMessage.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/);
 
-  let date, time;
+  if (timeMatch && dateMatch) {
+    const rawTime = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+    const rawDate = `${dateMatch[1].padStart(2, "0")}.${dateMatch[2].padStart(2, "0")}.${dateMatch[3].padStart(4, "20")}`;
 
-  if (match?.[1] && match?.[2]) {
-    // формат: дата время
-    date = dayjs(match[1], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY");
-    time = match[2].replace(".", ":").padStart(5, "0");
-  } else if (match?.[3] && match?.[4]) {
-    // формат: время дата
-    date = dayjs(match[4], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY");
-    time = match[3].replace(".", ":").padStart(5, "0");
-  }
+    const time = rawTime;
+    const date = dayjs(rawDate, "DD.MM.YYYY").format("DD.MM.YYYY");
 
-  if (date && time) {
     try {
       const songs = await fetchSongs();
       const song = songs.find((row) => {
