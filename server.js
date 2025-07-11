@@ -57,20 +57,28 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Обработка запроса на музыку
-  const regex = /(?:в\s)?(\d{1,2}[:.]\d{2})(?:\s)?(?:([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}))?/;
+  // Обработка даты и времени
+  const regex = /(?:в\s*)?([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4})\s+(\d{1,2}[:.]\d{2})|(\d{1,2}[:.]\d{2})\s+([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4})/;
   const match = userMessage.match(regex);
-  if (match) {
-    const time = match[1].replace(".", ":").padStart(5, "0"); // 9.00 -> 09:00
-    const date = match[2]
-      ? dayjs(match[2], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY")
-      : dayjs().format("DD.MM.YYYY");
 
+  let date, time;
+
+  if (match?.[1] && match?.[2]) {
+    // формат: дата время
+    date = dayjs(match[1], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY");
+    time = match[2].replace(".", ":").padStart(5, "0");
+  } else if (match?.[3] && match?.[4]) {
+    // формат: время дата
+    date = dayjs(match[4], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY");
+    time = match[3].replace(".", ":").padStart(5, "0");
+  }
+
+  if (date && time) {
     try {
       const songs = await fetchSongs();
       const song = songs.find((row) => {
         const rowDate = row["Дата"]?.trim();
-        const rowTime = row["Время"]?.trim().slice(0, 5); // Только HH:mm
+        const rowTime = row["Время"]?.trim().slice(0, 5);
         return rowDate === date && rowTime === time;
       });
 
@@ -89,7 +97,7 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Если не песня и не цена — отправляем в GPT
+  // GPT-ответ
   const messages = [
     {
       role: "system",
