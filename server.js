@@ -26,7 +26,7 @@ const prices = {
   "джингл": "от €15"
 };
 
-// Ссылка на опубликованную таблицу (CSV)
+// Ссылка на таблицу с песнями (CSV)
 const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYscFQEwGmJMM4hxoWEBrYam3JkQMD9FKbKpcwMrgfSdhaducl_FeHNqwPe-Sfn0HSyeQeMnyqvgtN/pub?gid=0&single=true&output=csv";
 
 async function fetchSongs() {
@@ -57,18 +57,22 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Проверка запроса вида "что играло в [дата/время]"
+  // Обработка запроса на музыку
   const regex = /(?:в\s)?(\d{1,2}[:.]\d{2})(?:\s)?(?:([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}))?/;
   const match = userMessage.match(regex);
   if (match) {
-    const time = match[1].replace(".", ":");
+    const time = match[1].replace(".", ":").padStart(5, "0"); // 9.00 -> 09:00
     const date = match[2]
       ? dayjs(match[2], ["DD.MM.YYYY", "DD/MM/YYYY", "DD-MM-YYYY"]).format("DD.MM.YYYY")
       : dayjs().format("DD.MM.YYYY");
 
     try {
       const songs = await fetchSongs();
-      const song = songs.find((row) => row["Дата"] === date && row["Время"] === time);
+      const song = songs.find((row) => {
+        const rowDate = row["Дата"]?.trim();
+        const rowTime = row["Время"]?.trim().slice(0, 5); // Только HH:mm
+        return rowDate === date && rowTime === time;
+      });
 
       if (song) {
         return res.json({
@@ -85,7 +89,7 @@ app.post("/chat", async (req, res) => {
     }
   }
 
-  // Если не песня и не цена — отправляем в OpenAI
+  // Если не песня и не цена — отправляем в GPT
   const messages = [
     {
       role: "system",
